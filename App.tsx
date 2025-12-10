@@ -1090,10 +1090,27 @@ const StudentResultView: React.FC<{
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    const found = students.find(s => 
-      s.rollNo === searchRoll && 
-      s.className === searchClass
-    );
+    
+    // Normalize inputs: Trim whitespace to handle "101 " or " 101"
+    const cleanRoll = searchRoll.trim();
+    // Class name should strictly match the dropdown value, but trim just in case
+    const cleanClass = searchClass.trim();
+
+    if (!cleanRoll || !cleanClass) {
+        setError('Please enter both Class and Roll Number.');
+        return;
+    }
+
+    const found = students.find(s => {
+        // Compare Roll No: Convert database value to string, trim, and compare case-insensitively
+        const dbRoll = String(s.rollNo || '').trim().toLowerCase();
+        const inputRoll = cleanRoll.toLowerCase();
+        
+        // Compare Class: Exact match usually, but safety trim doesn't hurt
+        const dbClass = (s.className || '').trim();
+        
+        return dbRoll === inputRoll && dbClass === cleanClass;
+    });
     
     if (found) {
       setResultStudent(found);
