@@ -50,19 +50,27 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
   const theme = { ...baseTheme, ...userPrefs };
 
   const processedSubjects = subjects.map(sub => {
+    // Force numbers to avoid NaN errors
+    const maxTheory = Number(sub.maxMarksTheory) || 0;
+    const maxAssess = Number(sub.maxMarksAssessment) || 0;
+    const termMax = maxTheory + maxAssess;
+
     const half = studentMarks.find(m => m.subjectId === sub.id && m.examType === 'HalfYearly');
     const annual = studentMarks.find(m => m.subjectId === sub.id && m.examType === 'Annual');
     
-    const halfTheory = half?.theory || 0;
-    const halfAssess = half?.assessment || 0;
+    const halfTheory = Number(half?.theory) || 0;
+    const halfAssess = Number(half?.assessment) || 0;
     const halfTotal = halfTheory + halfAssess;
 
-    const annualTheory = annual?.theory || 0;
-    const annualAssess = annual?.assessment || 0;
+    const annualTheory = Number(annual?.theory) || 0;
+    const annualAssess = Number(annual?.assessment) || 0;
     const annualTotal = annualTheory + annualAssess;
 
     const grandTotal = halfTotal + annualTotal;
-    const maxTotal = (sub.maxMarksTheory + sub.maxMarksAssessment) * 2; 
+    const maxTotal = termMax * 2; // Assuming 2 terms (Half Yearly + Annual)
+
+    // Calculate Grade based on percentage of this subject
+    const subjectPercentage = maxTotal > 0 ? (grandTotal / maxTotal) * 100 : 0;
 
     return {
       name: sub.name,
@@ -70,15 +78,19 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
       annual: { theory: annualTheory, assessment: annualAssess, total: annualTotal },
       grandTotal,
       maxTotal,
-      grade: calculateGrade((grandTotal / maxTotal) * 100),
-      percentage: maxTotal > 0 ? (grandTotal / maxTotal) * 100 : 0
+      grade: calculateGrade(subjectPercentage),
+      percentage: subjectPercentage
     };
   });
 
   const totalObtained = processedSubjects.reduce((acc, curr) => acc + curr.grandTotal, 0);
   const totalMax = processedSubjects.reduce((acc, curr) => acc + curr.maxTotal, 0);
-  const percentage = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(2) : "0";
-  const overallGrade = calculateGrade(parseFloat(percentage));
+  
+  // Guard against division by zero for NaN protection
+  const percentageVal = totalMax > 0 ? (totalObtained / totalMax) * 100 : 0;
+  const percentage = percentageVal.toFixed(2);
+  const overallGrade = calculateGrade(percentageVal);
+  
   const remarks = student.remarks || "Promoted to next class.";
   
   const currentYear = new Date().getFullYear();

@@ -162,6 +162,7 @@ const TeacherDashboard: React.FC<{
 
   const classStudents = students.filter(s => s.className === selectedClass);
   const classSubjects = subjects.filter(s => s.className === selectedClass);
+  const selectedSubjectObj = subjects.find(s => s.id === selectedSubjectId);
 
   useEffect(() => {
       setSelectedStudentIds(new Set());
@@ -169,9 +170,13 @@ const TeacherDashboard: React.FC<{
 
   const handleMarkChange = (studentId: string, field: 'theory' | 'assessment', value: string) => {
     if (!selectedSubjectId) return;
-    const numValue = parseFloat(value) || 0;
+    
+    // FIX: Handle 0 properly so it doesn't disappear
+    const numValue = value === '' ? 0 : parseFloat(value); 
+    
     let newMarks = [...marks];
-    const existingIndex = newMarks.findIndex(m => m.studentId === studentId && m.subjectId === selectedSubjectId && m.examType === examType);
+    // FIX: Robust Comparison (String conversion) to ensure ID match
+    const existingIndex = newMarks.findIndex(m => String(m.studentId) === String(studentId) && String(m.subjectId) === String(selectedSubjectId) && m.examType === examType);
     
     if (existingIndex >= 0) {
       newMarks[existingIndex] = { ...newMarks[existingIndex], [field]: numValue };
@@ -299,7 +304,8 @@ const TeacherDashboard: React.FC<{
       const aVal = batchAssessment ? parseFloat(batchAssessment) : null;
 
       selectedStudentIds.forEach(sid => {
-          const idx = newMarks.findIndex(m => m.studentId === sid && m.subjectId === selectedSubjectId && m.examType === examType);
+          // FIX: Robust Comparison here too
+          const idx = newMarks.findIndex(m => String(m.studentId) === String(sid) && String(m.subjectId) === String(selectedSubjectId) && m.examType === examType);
           if (idx >= 0) {
               if (tVal !== null) newMarks[idx].theory = tVal;
               if (aVal !== null) newMarks[idx].assessment = aVal;
@@ -323,8 +329,8 @@ const TeacherDashboard: React.FC<{
       const subject: T.Subject = {
           ...newSubject as T.Subject,
           id: newSubject.id || Date.now().toString(),
-          maxMarksTheory: Number(newSubject.maxMarksTheory) || 80,
-          maxMarksAssessment: Number(newSubject.maxMarksAssessment) || 20
+          maxMarksTheory: Number(newSubject.maxMarksTheory) || 0, // Ensure numeric
+          maxMarksAssessment: Number(newSubject.maxMarksAssessment) || 0 // Ensure numeric, can be 0
       };
       const exists = subjects.findIndex(s => s.id === subject.id);
       if (exists >= 0) {
@@ -498,15 +504,19 @@ const TeacherDashboard: React.FC<{
                                 </thead>
                                 <tbody>
                                 {classStudents.map(s => {
-                                    const mark = marks.find(m => m.studentId === s.id && m.subjectId === selectedSubjectId && m.examType === examType);
+                                    // FIX: Robust ID Comparison (String vs String)
+                                    const mark = marks.find(m => String(m.studentId) === String(s.id) && String(m.subjectId) === String(selectedSubjectId) && m.examType === examType);
                                     const isSelected = selectedStudentIds.has(s.id);
+                                    const isIADisabled = selectedSubjectObj && Number(selectedSubjectObj.maxMarksAssessment) === 0;
+
                                     return (
                                     <tr key={s.id} className={`border-b transition-colors ${isSelected ? 'bg-indigo-50' : 'hover:bg-gray-50'}`}>
                                         <td className="p-2 text-center sticky left-0 z-20 bg-inherit border-r md:border-none"><input type="checkbox" className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 size-5 cursor-pointer" checked={isSelected} onChange={() => handleSelectStudent(s.id)} /></td>
                                         <td className="p-2 font-mono text-gray-500 text-sm">{s.rollNo}</td>
                                         <td className="p-2 font-medium whitespace-nowrap text-sm">{s.name}</td>
-                                        <td className="p-2"><input type="number" className="w-full border border-gray-300 p-2 rounded text-center bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={mark?.theory || ''} placeholder="0" onChange={e => handleMarkChange(s.id, 'theory', e.target.value)}/></td>
-                                        <td className="p-2"><input type="number" className="w-full border border-gray-300 p-2 rounded text-center bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={mark?.assessment || ''} placeholder="0" onChange={e => handleMarkChange(s.id, 'assessment', e.target.value)}/></td>
+                                        {/* FIX: Ensure 0 is displayed correctly and not as empty string */}
+                                        <td className="p-2"><input type="number" className="w-full border border-gray-300 p-2 rounded text-center bg-white focus:ring-2 focus:ring-indigo-500 outline-none" value={mark?.theory !== undefined ? mark.theory : ''} placeholder="0" onChange={e => handleMarkChange(s.id, 'theory', e.target.value)}/></td>
+                                        <td className="p-2"><input type="number" disabled={isIADisabled} className={`w-full border border-gray-300 p-2 rounded text-center focus:ring-2 focus:ring-indigo-500 outline-none ${isIADisabled ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white'}`} value={isIADisabled ? '' : (mark?.assessment !== undefined ? mark.assessment : '')} placeholder={isIADisabled ? '-' : '0'} onChange={e => handleMarkChange(s.id, 'assessment', e.target.value)}/></td>
                                         <td className="p-2"><input type="text" className="w-full border border-gray-300 p-2 rounded px-2 text-sm bg-white focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Remark..." value={s.remarks || ''} onChange={e => handleRemarkChange(s.id, e.target.value)} /></td>
                                         <td className="p-2 text-center">
                                         <button onClick={() => handleRemarkGen(s)} disabled={loadingAI.has(s.id)} className="text-xs bg-purple-100 text-purple-700 p-2 rounded transition hover:bg-purple-200" title="Auto-generate Remark">
@@ -858,8 +868,8 @@ const AdminDashboard: React.FC<{
       const subject: T.Subject = {
           ...newSubject as T.Subject,
           id: newSubject.id || Date.now().toString(),
-          maxMarksTheory: Number(newSubject.maxMarksTheory) || 80,
-          maxMarksAssessment: Number(newSubject.maxMarksAssessment) || 20
+          maxMarksTheory: Number(newSubject.maxMarksTheory) || 0, // Ensure numeric
+          maxMarksAssessment: Number(newSubject.maxMarksAssessment) || 0 // Ensure numeric, can be 0
       };
       const existsIdx = subjects.findIndex(s => s.id === subject.id);
       if (existsIdx >= 0) {
@@ -890,6 +900,54 @@ const AdminDashboard: React.FC<{
       }
       setIsTeacherModalOpen(false);
       setCurrentTeacher({ assignedClasses: [] });
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let width = img.width;
+              let height = img.height;
+              const MAX_SIZE = 150; 
+
+              if (width > height) {
+                  if (width > MAX_SIZE) {
+                      height *= MAX_SIZE / width;
+                      width = MAX_SIZE;
+                  }
+              } else {
+                  if (height > MAX_SIZE) {
+                      width *= MAX_SIZE / height;
+                      height = MAX_SIZE;
+                  }
+              }
+
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                  ctx.drawImage(img, 0, 0, width, height);
+                  const dataUrl = canvas.toDataURL('image/png');
+                  if (dataUrl.length > 50000) {
+                      const jpgUrl = canvas.toDataURL('image/jpeg', 0.8);
+                      if (jpgUrl.length > 50000) {
+                          alert("Logo is too complex to store. Please use a simpler image.");
+                      } else {
+                          onSaveConfig({...config, logoUrl: jpgUrl});
+                      }
+                  } else {
+                      onSaveConfig({...config, logoUrl: dataUrl});
+                  }
+              }
+          };
+          img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
   };
   
   const handleTemplateEdit = (field: string, value: any) => {
@@ -1220,7 +1278,31 @@ const AdminDashboard: React.FC<{
                                    <div><label className="text-xs font-bold text-gray-500">School Name</label><input className="w-full border p-2 rounded" value={config.name} onChange={e => onSaveConfig({...config, name: e.target.value})} /></div>
                                    <div><label className="text-xs font-bold text-gray-500">Address</label><input className="w-full border p-2 rounded" value={config.address} onChange={e => onSaveConfig({...config, address: e.target.value})} /></div>
                                    <div><label className="text-xs font-bold text-gray-500">Session Year</label><input className="w-full border p-2 rounded" value={config.sessionYear || ''} onChange={e => onSaveConfig({...config, sessionYear: e.target.value})} /></div>
-                                   <div><label className="text-xs font-bold text-gray-500">Logo URL</label><input className="w-full border p-2 rounded" value={config.logoUrl} onChange={e => onSaveConfig({...config, logoUrl: e.target.value})} placeholder="https://..." /></div>
+                                   
+                                   <div>
+                                       <label className="text-xs font-bold text-gray-500">School Logo</label>
+                                       <div className="flex items-center gap-4 mt-2 p-2 border border-dashed border-gray-300 rounded bg-gray-50">
+                                           {config.logoUrl ? (
+                                               <div className="relative group shrink-0">
+                                                   <img src={config.logoUrl} alt="Logo" className="h-16 w-16 object-contain bg-white rounded shadow-sm border" />
+                                                   <button onClick={() => onSaveConfig({...config, logoUrl: ''})} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow hover:bg-red-600" title="Remove"><X className="size-3"/></button>
+                                               </div>
+                                           ) : (
+                                               <div className="h-16 w-16 bg-gray-200 rounded flex items-center justify-center text-gray-400 shrink-0"><ImageIcon className="size-8"/></div>
+                                           )}
+                                           <div className="flex-grow">
+                                                <div className="flex gap-2 mb-2">
+                                                    <label className="cursor-pointer bg-indigo-600 text-white px-3 py-1.5 rounded text-xs font-bold hover:bg-indigo-700 flex items-center shadow-sm">
+                                                        <Upload className="mr-2 size-3"/> Upload Image
+                                                        <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
+                                                    </label>
+                                                </div>
+                                                <p className="text-[10px] text-gray-500 mb-1">Max 150x150px (Auto-resized). Stored internally.</p>
+                                                <input className="w-full border p-1 rounded text-[10px]" value={config.logoUrl} onChange={e => onSaveConfig({...config, logoUrl: e.target.value})} placeholder="Or paste URL here..." />
+                                           </div>
+                                       </div>
+                                   </div>
+
                                    <div className="flex items-center gap-2 pt-2">
                                        <input type="checkbox" className="size-5 text-indigo-600 rounded" checked={config.isResultsPublished} onChange={e => onSaveConfig({...config, isResultsPublished: e.target.checked})} />
                                        <label className="text-sm font-bold text-gray-700">Publish Results (Students can view)</label>
