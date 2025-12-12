@@ -1,3 +1,4 @@
+
 export interface Student {
   id: string;
   srNo: string;
@@ -8,9 +9,9 @@ export interface Student {
   className: string;
   mobile: string;
   dob: string;
-  gender?: string;        // Added
-  category?: string;      // Added (Gen, OBC, SC, ST)
-  admissionDate?: string; // Added
+  gender?: string;
+  category?: string;
+  admissionDate?: string;
   address: string;
   attendance: {
     totalDays: number;
@@ -46,6 +47,11 @@ export interface TemplateOptions {
   primaryColor: string;
   secondaryColor: string;
   fontFamily: 'sans' | 'serif' | 'mono';
+  // New Design Customization Fields
+  headerStyle?: 'standard' | 'modern' | 'minimal';
+  tableStyle?: 'striped' | 'grid' | 'clean';
+  borderStyle?: 'classic' | 'rounded' | 'none';
+  showWatermark?: boolean;
 }
 
 export interface SchoolConfig {
@@ -57,9 +63,9 @@ export interface SchoolConfig {
   adminPassword?: string;
   isResultsPublished: boolean;
   googleWebAppUrl?: string;
-  sessionYear?: string;     // Added
-  activeTemplate?: number;  // Added (1-5)
-  templatePreferences?: Record<number, TemplateOptions>; // Added for customization
+  sessionYear?: string;
+  activeTemplate?: number;
+  templatePreferences?: Record<number, TemplateOptions>;
 }
 
 export type ViewState = 'HOME' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD' | 'TEACHER_LOGIN' | 'TEACHER_DASHBOARD' | 'STUDENT_RESULT';

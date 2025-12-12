@@ -2,18 +2,29 @@ import { GoogleGenAI } from "@google/genai";
 
 const getClient = () => {
   let apiKey = '';
-  // Safely check for process.env to prevent "ReferenceError: process is not defined" crashes
+  
   try {
+    // 1. Check standard process.env (Node/Vite)
     // @ts-ignore
-    if (typeof process !== 'undefined' && process.env) {
+    if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
       // @ts-ignore
       apiKey = process.env.API_KEY;
+    } 
+    // 2. Check window.process.env (Injected by our build script)
+    // @ts-ignore
+    else if (typeof window !== 'undefined' && window.process && window.process.env && window.process.env.API_KEY) {
+      // @ts-ignore
+      apiKey = window.process.env.API_KEY;
     }
   } catch (e) {
     console.warn("Could not access environment variables");
   }
 
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.warn("Gemini API Key is missing. AI features will return mock data.");
+    return null;
+  }
+  
   return new GoogleGenAI({ apiKey });
 };
 
@@ -23,6 +34,8 @@ export const generateStudentRemark = async (
   performanceSummary: string
 ): Promise<string> => {
   const client = getClient();
+  
+  // Graceful fallback if no key is present
   if (!client) return "Excellent work! (AI Key missing)";
 
   try {

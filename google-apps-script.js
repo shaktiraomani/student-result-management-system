@@ -76,7 +76,6 @@ function _setupSheet(ss, name, headers) {
     sheet.setFrozenRows(1);
   } else {
     // If sheet exists but is empty (only header or less), re-write headers to ensure they are correct
-    // NOTE: Does not migrate existing data columns automatically.
     if (sheet.getLastRow() < 2) {
        sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight("bold");
     }
@@ -87,14 +86,29 @@ function _saveData(ss, name, data) {
   const sheet = ss.getSheetByName(name);
   if (!sheet) throw new Error("Sheet " + name + " not found. Please reload.");
   
+  if (!data || data.length === 0) return;
+
+  // --- AUTO-FIX HEADERS FOR CONFIG ---
+  // If we are saving Config, check if we have new keys in data that are missing in headers
+  if (name === 'Config') {
+    const existingHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const dataKeys = Object.keys(data[0]);
+    const missingKeys = dataKeys.filter(k => !existingHeaders.includes(k));
+    
+    if (missingKeys.length > 0) {
+      // Append missing headers
+      sheet.getRange(1, existingHeaders.length + 1, 1, missingKeys.length).setValues([missingKeys]).setFontWeight("bold");
+    }
+  }
+  // -----------------------------------
+
   // Clear content properly: Start row 2, col 1, all rows down, all cols across
   const lastRow = sheet.getLastRow();
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
   }
   
-  if (!data || data.length === 0) return;
-
+  // Re-fetch headers in case we updated them
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const rows = data.map(item => {
     return headers.map(header => {

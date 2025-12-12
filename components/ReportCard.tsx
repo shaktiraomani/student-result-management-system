@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Student, MarkRecord, Subject, SchoolConfig, TemplateOptions } from '../types';
-import { Quote, GraduationCap } from 'lucide-react';
+import { Quote, GraduationCap, Download, Loader } from 'lucide-react';
+import html2canvas from 'html2canvas';
 
 interface ReportCardProps {
   student: Student;
@@ -8,26 +9,46 @@ interface ReportCardProps {
   marks: MarkRecord[];
   config: SchoolConfig;
   template: number;
+  orientation?: 'portrait' | 'landscape';
 }
 
 export const DEFAULT_THEMES: Record<number, TemplateOptions> = {
-  1: { primaryColor: '#1f2937', secondaryColor: '#4b5563', fontFamily: 'serif' }, // Classic (Gray-800)
-  2: { primaryColor: '#4338ca', secondaryColor: '#3730a3', fontFamily: 'sans' }, // Modern (Indigo-700)
-  3: { primaryColor: '#111827', secondaryColor: '#d1d5db', fontFamily: 'sans' }, // Professional (Gray-900)
-  4: { primaryColor: '#7c2d12', secondaryColor: '#fed7aa', fontFamily: 'serif' }, // Elegant (Orange-900)
-  5: { primaryColor: '#1e3a8a', secondaryColor: '#2563eb', fontFamily: 'sans' }, // Corporate (Blue-900)
+  1: { primaryColor: '#1f2937', secondaryColor: '#4b5563', fontFamily: 'serif', showWatermark: false }, // Classic
+  2: { primaryColor: '#4338ca', secondaryColor: '#3730a3', fontFamily: 'sans', showWatermark: false }, // Modern
+  3: { primaryColor: '#111827', secondaryColor: '#d1d5db', fontFamily: 'sans', showWatermark: false }, // Professional
+  4: { primaryColor: '#7c2d12', secondaryColor: '#fed7aa', fontFamily: 'serif', showWatermark: false }, // Elegant
+  5: { primaryColor: '#1e3a8a', secondaryColor: '#2563eb', fontFamily: 'sans', showWatermark: false }, // Corporate
+  6: { 
+    primaryColor: '#000000', 
+    secondaryColor: '#666666', 
+    fontFamily: 'sans',
+    headerStyle: 'standard',
+    tableStyle: 'grid',
+    borderStyle: 'classic',
+    showWatermark: false
+  }, // Custom Builder
 };
 
-export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks, config, template }) => {
-  // Filter marks for this student
+const formatDOB = (dob?: string) => {
+  if (!dob) return '';
+  const datePart = dob.split('T')[0];
+  const parts = datePart.split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return datePart;
+};
+
+export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks, config, template, orientation = 'portrait' }) => {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [downloading, setDownloading] = useState(false);
+
   const studentMarks = marks.filter(m => m.studentId === student.id);
   
-  // Get Theme with Fallback - Safety check for invalid template ID
   const baseTheme = DEFAULT_THEMES[template] || DEFAULT_THEMES[1];
   const userPrefs = config.templatePreferences?.[template] || {};
   const theme = { ...baseTheme, ...userPrefs };
 
-  // Calculate totals
   const processedSubjects = subjects.map(sub => {
     const half = studentMarks.find(m => m.subjectId === sub.id && m.examType === 'HalfYearly');
     const annual = studentMarks.find(m => m.subjectId === sub.id && m.examType === 'Annual');
@@ -58,7 +79,7 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
   const totalMax = processedSubjects.reduce((acc, curr) => acc + curr.maxTotal, 0);
   const percentage = totalMax > 0 ? ((totalObtained / totalMax) * 100).toFixed(2) : "0";
   const overallGrade = calculateGrade(parseFloat(percentage));
-  const remarks = student.remarks || "Promoted to next class. Keep up the good work.";
+  const remarks = student.remarks || "Promoted to next class.";
   
   const currentYear = new Date().getFullYear();
   const session = config.sessionYear || `${currentYear}-${currentYear + 1}`;
@@ -68,17 +89,67 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
     : 'N/A';
 
   const fontClass = theme.fontFamily === 'serif' ? 'font-serif' : theme.fontFamily === 'mono' ? 'font-mono' : 'font-sans';
-
-  // Ensure template is valid for rendering logic
+  const minHeightClass = orientation === 'landscape' ? 'min-h-[210mm]' : 'min-h-[29.7cm]';
   const activeTemplate = DEFAULT_THEMES[template] ? template : 1;
 
-  // --- TEMPLATE 1: CLASSIC (Official/Bordered) ---
+  const handleDownloadJpg = async () => {
+    if (!cardRef.current) return;
+    setDownloading(true);
+    try {
+      await document.fonts.ready;
+      const canvas = await html2canvas(cardRef.current, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff'
+      });
+      
+      const image = canvas.toDataURL("image/jpeg", 0.9);
+      const link = document.createElement('a');
+      link.href = image;
+      link.download = `${student.name}_Result.jpg`;
+      link.click();
+    } catch (err) {
+      console.error("Download failed:", err);
+      alert("Failed to download image.");
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  const DownloadButton = () => (
+    <button 
+      onClick={handleDownloadJpg} 
+      disabled={downloading}
+      className="no-print absolute top-2 right-2 z-50 bg-gray-800 text-white p-2 rounded-full shadow-lg hover:bg-gray-700 transition title-download opacity-50 hover:opacity-100"
+      title="Download as JPG"
+    >
+      {downloading ? <Loader className="animate-spin size-5" /> : <Download className="size-5" />}
+    </button>
+  );
+
+  const Watermark = () => (
+    theme.showWatermark && config.logoUrl ? (
+      <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none overflow-hidden">
+         <img src={config.logoUrl} className="w-[500px] h-[500px] object-contain opacity-[0.04] grayscale" crossOrigin="anonymous" />
+      </div>
+    ) : null
+  );
+
+  const Wrapper: React.FC<{children: React.ReactNode, className: string}> = ({children, className}) => (
+    <div className={`relative group ${className}`} ref={cardRef}>
+       <DownloadButton />
+       <Watermark />
+       <div className="relative z-10 h-full flex flex-col">{children}</div>
+    </div>
+  );
+
+  // --- TEMPLATE 1: CLASSIC ---
   if (activeTemplate === 1) {
     return (
-      <div className={`w-full bg-white p-8 md:p-12 mb-8 page-break text-gray-900 relative shadow-xl print:shadow-none min-h-[29.7cm] ${fontClass}`}>
-        <div className="border-4 border-double h-full p-6 relative z-10" style={{ borderColor: theme.primaryColor }}>
+      <Wrapper className={`w-full bg-white p-8 md:p-12 mb-8 page-break text-gray-900 shadow-xl print:shadow-none ${minHeightClass} ${fontClass}`}>
+        <div className="border-4 border-double h-full p-6 relative flex flex-col" style={{ borderColor: theme.primaryColor }}>
           <div className="flex flex-col md:flex-row items-center justify-between border-b-2 pb-6 mb-6 gap-6" style={{ borderColor: theme.primaryColor }}>
-             {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-24 w-24 object-contain" />}
+             {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-24 w-24 object-contain" crossOrigin="anonymous" />}
              <div className="text-center flex-1">
                 <h1 className="text-3xl md:text-4xl font-bold uppercase tracking-wider mb-2" style={{ color: theme.primaryColor }}>{config.name}</h1>
                 <p className="text-sm md:text-base font-medium text-gray-600 mb-2">{config.address}</p>
@@ -94,25 +165,25 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
              <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>Father's Name:</span> {student.fatherName}</div>
              <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>Class:</span> {student.className}</div>
              <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>Mother's Name:</span> {student.motherName}</div>
-             <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>D.O.B:</span> {student.dob}</div>
+             <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>D.O.B:</span> {formatDOB(student.dob)}</div>
              <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>SR No:</span> {student.srNo}</div>
              <div className="flex"><span className="w-32 font-bold" style={{ color: theme.primaryColor }}>Attendance:</span> {student.attendance.presentDays}/{student.attendance.totalDays} ({attendancePercentage}%)</div>
           </div>
           <MarksTable subjects={processedSubjects} totalObtained={totalObtained} totalMax={totalMax} overallGrade={overallGrade} style="classic" theme={theme} />
           <FooterSection remarks={remarks} percentage={percentage} style="classic" theme={theme} />
         </div>
-      </div>
+      </Wrapper>
     );
   }
 
-  // --- TEMPLATE 2: MODERN (Colorful/Banner) ---
+  // --- TEMPLATE 2: MODERN ---
   if (activeTemplate === 2) {
     return (
-      <div className={`w-full bg-white mb-8 page-break relative shadow-xl print:shadow-none overflow-hidden min-h-[29.7cm] ${fontClass}`}>
+      <Wrapper className={`w-full bg-white mb-8 page-break shadow-xl print:shadow-none overflow-hidden ${minHeightClass} ${fontClass}`}>
          <div className="text-white p-6 relative" style={{ backgroundColor: theme.primaryColor }}>
             <div className="absolute top-0 right-0 p-4 opacity-10"><GraduationCap size={150} /></div>
             <div className="flex items-center gap-6 relative z-10">
-                {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-20 w-20 bg-white rounded-full p-2 object-contain" />}
+                {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-20 w-20 bg-white rounded-full p-2 object-contain" crossOrigin="anonymous" />}
                 <div>
                     <h1 className="text-2xl font-bold mb-1">{config.name}</h1>
                     <p className="opacity-80 text-sm">{config.address}</p>
@@ -120,28 +191,33 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
                 </div>
             </div>
          </div>
-         <div className="p-6">
+         <div className="p-6 flex-grow flex flex-col">
             <div className="grid grid-cols-4 gap-4 mb-6 bg-gray-50 p-4 rounded-lg border border-gray-100 text-sm">
-                <div><p className="text-[10px] text-gray-500 uppercase font-bold">Name</p><p className="font-bold" style={{ color: theme.primaryColor }}>{student.name}</p></div>
+                <div><p className="text-[10px] text-gray-500 uppercase font-bold">Name</p><p className="font-bold truncate" style={{ color: theme.primaryColor }}>{student.name}</p></div>
                 <div><p className="text-[10px] text-gray-500 uppercase font-bold">Class</p><p className="font-bold text-gray-800">{student.className}</p></div>
                 <div><p className="text-[10px] text-gray-500 uppercase font-bold">Roll No</p><p className="font-bold text-gray-800">{student.rollNo}</p></div>
                 <div><p className="text-[10px] text-gray-500 uppercase font-bold">Attendance</p><p className="font-semibold text-gray-800">{attendancePercentage}%</p></div>
+                
+                <div><p className="text-[10px] text-gray-500 uppercase font-bold">Father</p><p className="font-medium text-gray-800 truncate">{student.fatherName}</p></div>
+                <div><p className="text-[10px] text-gray-500 uppercase font-bold">Mother</p><p className="font-medium text-gray-800 truncate">{student.motherName}</p></div>
+                <div><p className="text-[10px] text-gray-500 uppercase font-bold">D.O.B</p><p className="font-medium text-gray-800">{formatDOB(student.dob)}</p></div>
+                <div><p className="text-[10px] text-gray-500 uppercase font-bold">SR No</p><p className="font-medium text-gray-800">{student.srNo}</p></div>
             </div>
             <MarksTable subjects={processedSubjects} totalObtained={totalObtained} totalMax={totalMax} overallGrade={overallGrade} style="modern" theme={theme} />
             <FooterSection remarks={remarks} percentage={percentage} style="modern" theme={theme} />
          </div>
          <div className="h-2 w-full absolute bottom-0" style={{ backgroundColor: theme.primaryColor }}></div>
-      </div>
+      </Wrapper>
     );
   }
 
-  // --- TEMPLATE 3: PROFESSIONAL (Grid/Corporate) ---
+  // --- TEMPLATE 3: PROFESSIONAL ---
   if (activeTemplate === 3) {
       return (
-          <div className={`w-full bg-white p-8 mb-8 page-break relative shadow-xl print:shadow-none min-h-[29.7cm] ${fontClass}`}>
+          <Wrapper className={`w-full bg-white p-8 mb-8 page-break shadow-xl print:shadow-none ${minHeightClass} ${fontClass}`}>
               <div className="flex justify-between items-start border-b-4 pb-4 mb-6" style={{ borderColor: theme.primaryColor }}>
                   <div className="flex items-center">
-                    {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-20 w-20 object-contain mr-4" />}
+                    {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-20 w-20 object-contain mr-4" crossOrigin="anonymous" />}
                     <div>
                         <h1 className="text-2xl font-black tracking-tight uppercase" style={{ color: theme.primaryColor }}>{config.name}</h1>
                         <p className="text-gray-500 text-sm">{config.address}</p>
@@ -154,7 +230,7 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
               </div>
 
               <div className="bg-gray-50 p-6 rounded-lg border border-gray-200 mb-8">
-                  <div className="grid grid-cols-3 gap-6 text-sm">
+                  <div className="grid grid-cols-4 gap-4 text-sm">
                       <div className="col-span-1">
                           <label className="block text-xs font-bold text-gray-400 uppercase">Student Name</label>
                           <div className="font-bold text-lg" style={{ color: theme.primaryColor }}>{student.name}</div>
@@ -168,6 +244,10 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
                           <div className="font-bold text-lg" style={{ color: theme.primaryColor }}>{student.rollNo}</div>
                       </div>
                       <div className="col-span-1">
+                          <label className="block text-xs font-bold text-gray-400 uppercase">SR Number</label>
+                          <div className="font-bold text-lg" style={{ color: theme.primaryColor }}>{student.srNo}</div>
+                      </div>
+                      <div className="col-span-1">
                           <label className="block text-xs font-bold text-gray-400 uppercase">Father's Name</label>
                           <div className="font-medium text-gray-700">{student.fatherName}</div>
                       </div>
@@ -176,38 +256,45 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
                           <div className="font-medium text-gray-700">{student.motherName}</div>
                       </div>
                       <div className="col-span-1">
+                          <label className="block text-xs font-bold text-gray-400 uppercase">Date of Birth</label>
+                          <div className="font-medium text-gray-700">{formatDOB(student.dob)}</div>
+                      </div>
+                      <div className="col-span-1">
                           <label className="block text-xs font-bold text-gray-400 uppercase">Attendance</label>
-                          <div className="font-medium text-gray-700">{attendancePercentage}%</div>
+                          <div className="font-medium text-gray-700">{attendancePercentage}% ({student.attendance.presentDays}/{student.attendance.totalDays})</div>
                       </div>
                   </div>
               </div>
 
               <MarksTable subjects={processedSubjects} totalObtained={totalObtained} totalMax={totalMax} overallGrade={overallGrade} style="professional" theme={theme} />
               <FooterSection remarks={remarks} percentage={percentage} style="professional" theme={theme} />
-          </div>
+          </Wrapper>
       );
   }
 
-  // --- TEMPLATE 4: ELEGANT (Boxed/Serif/Gold) ---
+  // --- TEMPLATE 4: ELEGANT ---
   if (activeTemplate === 4) {
       return (
-          <div className={`w-full bg-gray-50 p-8 mb-8 page-break relative shadow-xl print:shadow-none min-h-[29.7cm] ${fontClass}`}>
-              <div className="border bg-white p-6 shadow-inner h-full rounded-xl" style={{ borderColor: theme.secondaryColor }}>
+          <Wrapper className={`w-full bg-gray-50 p-8 mb-8 page-break shadow-xl print:shadow-none ${minHeightClass} ${fontClass}`}>
+              <div className="border bg-white p-6 shadow-inner h-full rounded-xl flex flex-col" style={{ borderColor: theme.secondaryColor }}>
                   <div className="text-center mb-8 border-b pb-4" style={{ borderColor: theme.secondaryColor }}>
-                      {config.logoUrl && <img src={config.logoUrl} className="h-16 mx-auto mb-2" />}
+                      {config.logoUrl && <img src={config.logoUrl} className="h-16 mx-auto mb-2" crossOrigin="anonymous" />}
                       <h1 className="text-3xl font-bold" style={{ color: theme.primaryColor }}>{config.name}</h1>
                       <p className="text-sm italic" style={{ color: theme.secondaryColor }}>{config.address}</p>
                       <div className="mt-4 inline-block border-t border-b py-1 px-6 tracking-widest text-sm uppercase" style={{ color: theme.primaryColor, borderColor: theme.secondaryColor }}>Student Performance Report</div>
                   </div>
 
                   <div className="flex justify-center mb-8">
-                      <div className="border p-6 rounded text-center w-full max-w-2xl" style={{ borderColor: theme.secondaryColor, backgroundColor: 'rgba(255,255,255,0.5)' }}>
+                      <div className="border p-6 rounded text-center w-full max-w-3xl" style={{ borderColor: theme.secondaryColor, backgroundColor: 'rgba(255,255,255,0.5)' }}>
                           <h2 className="text-2xl mb-1" style={{ color: theme.primaryColor }}>{student.name}</h2>
                           <p className="text-sm mb-4" style={{ color: theme.primaryColor }}>Class: {student.className} | Roll No: {student.rollNo}</p>
-                          <div className="flex justify-center gap-6 text-xs border-t pt-3" style={{ borderColor: theme.secondaryColor, color: theme.primaryColor }}>
-                              <span>Father: {student.fatherName}</span>
-                              <span>Session: {session}</span>
-                              <span>Attendance: {attendancePercentage}%</span>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs border-t pt-3" style={{ borderColor: theme.secondaryColor, color: theme.primaryColor }}>
+                              <span><strong>Father:</strong> {student.fatherName}</span>
+                              <span><strong>Mother:</strong> {student.motherName}</span>
+                              <span><strong>DOB:</strong> {formatDOB(student.dob)}</span>
+                              <span><strong>Session:</strong> {session}</span>
+                              <span><strong>SR No:</strong> {student.srNo}</span>
+                              <span><strong>Attendance:</strong> {attendancePercentage}%</span>
                           </div>
                       </div>
                   </div>
@@ -215,36 +302,40 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
                   <MarksTable subjects={processedSubjects} totalObtained={totalObtained} totalMax={totalMax} overallGrade={overallGrade} style="elegant" theme={theme} />
                   <FooterSection remarks={remarks} percentage={percentage} style="elegant" theme={theme} />
               </div>
-          </div>
+          </Wrapper>
       );
   }
 
-  // --- TEMPLATE 5: BLUE CORPORATE ---
+  // --- TEMPLATE 5: CORPORATE ---
   if (activeTemplate === 5) {
       return (
-        <div className={`w-full bg-white mb-8 page-break relative shadow-xl print:shadow-none min-h-[29.7cm] ${fontClass}`}>
+        <Wrapper className={`w-full bg-white mb-8 page-break shadow-xl print:shadow-none ${minHeightClass} ${fontClass}`}>
             <div className="text-white p-8" style={{ backgroundColor: theme.primaryColor }}>
                 <div className="flex justify-between items-center">
                     <div>
                         <h1 className="text-2xl font-bold tracking-tight">{config.name}</h1>
                         <p className="text-sm opacity-80">{config.address}</p>
                     </div>
-                    {config.logoUrl && <img src={config.logoUrl} className="h-16 bg-white p-1 rounded" />}
+                    {config.logoUrl && <img src={config.logoUrl} className="h-16 bg-white p-1 rounded" crossOrigin="anonymous" />}
                 </div>
             </div>
             
-            <div className="p-8">
+            <div className="p-8 flex-grow flex flex-col">
                 <div className="flex gap-4 items-stretch mb-8">
-                    <div className="w-2/3 p-4 rounded-l border-l-4" style={{ backgroundColor: '#f9fafb', borderColor: theme.secondaryColor }}>
+                    <div className="w-3/4 p-4 rounded-l border-l-4" style={{ backgroundColor: '#f9fafb', borderColor: theme.secondaryColor }}>
                         <h3 className="font-bold uppercase text-xs mb-3" style={{ color: theme.primaryColor }}>Student Details</h3>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                            <div><span className="text-gray-500 block text-xs">Name</span><span className="font-bold">{student.name}</span></div>
-                            <div><span className="text-gray-500 block text-xs">Class</span><span className="font-bold">{student.className}</span></div>
-                            <div><span className="text-gray-500 block text-xs">Roll No</span><span className="font-bold">{student.rollNo}</span></div>
-                            <div><span className="text-gray-500 block text-xs">Attendance</span><span className="font-bold">{attendancePercentage}%</span></div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div><span className="text-gray-500 block text-[10px]">Name</span><span className="font-bold">{student.name}</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">Class</span><span className="font-bold">{student.className}</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">Roll No</span><span className="font-bold">{student.rollNo}</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">Attendance</span><span className="font-bold">{attendancePercentage}%</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">Father</span><span className="font-bold">{student.fatherName}</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">Mother</span><span className="font-bold">{student.motherName}</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">D.O.B</span><span className="font-bold">{formatDOB(student.dob)}</span></div>
+                            <div><span className="text-gray-500 block text-[10px]">SR No</span><span className="font-bold">{student.srNo}</span></div>
                         </div>
                     </div>
-                    <div className="bg-gray-100 w-1/3 p-4 rounded-r text-center flex flex-col justify-center">
+                    <div className="bg-gray-100 w-1/4 p-4 rounded-r text-center flex flex-col justify-center">
                         <span className="text-gray-500 text-xs uppercase">Academic Session</span>
                         <span className="text-xl font-bold text-gray-800">{session}</span>
                     </div>
@@ -256,8 +347,64 @@ export const ReportCard: React.FC<ReportCardProps> = ({ student, subjects, marks
             <div className="text-center p-2 text-xs absolute bottom-0 w-full text-white" style={{ backgroundColor: theme.primaryColor }}>
                 Generate by {config.developerName}
             </div>
-        </div>
+        </Wrapper>
       );
+  }
+
+  // --- TEMPLATE 6: CUSTOM BUILDER ---
+  if (activeTemplate === 6) {
+    const { headerStyle = 'standard', borderStyle = 'classic', tableStyle = 'grid' } = theme;
+
+    const borderClass = borderStyle === 'classic' ? `border-4 border-double p-6` 
+                      : borderStyle === 'rounded' ? `border-2 rounded-2xl p-6` 
+                      : `p-4`;
+    
+    return (
+      <Wrapper className={`w-full bg-white p-8 mb-8 page-break shadow-xl print:shadow-none relative overflow-hidden ${minHeightClass} ${fontClass}`}>
+        <div className={`h-full relative z-10 ${borderClass} flex flex-col`} style={{ borderColor: theme.primaryColor }}>
+          
+          {/* HEADER */}
+          <div className={`mb-8 ${headerStyle === 'modern' ? 'bg-gray-50 -mx-6 -mt-6 p-6 border-b' : 'border-b pb-4'}`} style={{ borderColor: theme.secondaryColor }}>
+             <div className={`flex items-center gap-6 ${headerStyle === 'standard' ? 'flex-col md:flex-row text-center md:text-left justify-center md:justify-between' : 'flex-row'}`}>
+                {config.logoUrl && <img src={config.logoUrl} alt="Logo" className="h-20 w-20 object-contain" crossOrigin="anonymous" />}
+                <div className={`${headerStyle === 'standard' ? 'text-center flex-1' : 'flex-1'}`}>
+                   <h1 className="text-3xl font-bold uppercase tracking-tight" style={{ color: theme.primaryColor }}>{config.name}</h1>
+                   <p className="text-sm font-medium text-gray-600">{config.address}</p>
+                   {headerStyle !== 'minimal' && (
+                     <div className="mt-2 inline-block px-4 py-1 text-xs font-bold uppercase tracking-widest text-white rounded" style={{ backgroundColor: theme.primaryColor }}>
+                       Result Sheet {session}
+                     </div>
+                   )}
+                </div>
+                {headerStyle === 'minimal' && (
+                   <div className="text-right">
+                      <div className="text-sm font-bold text-gray-400">SESSION</div>
+                      <div className="text-xl font-bold" style={{ color: theme.secondaryColor }}>{session}</div>
+                   </div>
+                )}
+             </div>
+          </div>
+
+          {/* STUDENT DETAILS */}
+          <div className="mb-8 p-4 bg-gray-50/50 rounded-lg border border-gray-100">
+             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">Name</label><span className="font-bold text-lg" style={{ color: theme.primaryColor }}>{student.name}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">Class</label><span className="font-medium text-gray-800">{student.className}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">Roll No</label><span className="font-medium text-gray-800">{student.rollNo}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">D.O.B</label><span className="font-medium text-gray-800">{formatDOB(student.dob)}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">Father</label><span className="font-medium text-gray-800">{student.fatherName}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">Mother</label><span className="font-medium text-gray-800">{student.motherName}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">SR No</label><span className="font-medium text-gray-800">{student.srNo}</span></div>
+                <div><label className="text-[10px] font-bold uppercase text-gray-400 block">Attendance</label><span className="font-medium text-gray-800">{attendancePercentage}%</span></div>
+             </div>
+          </div>
+
+          <MarksTable subjects={processedSubjects} totalObtained={totalObtained} totalMax={totalMax} overallGrade={overallGrade} style={tableStyle === 'striped' ? 'modern' : tableStyle === 'clean' ? 'professional' : 'classic'} theme={theme} />
+          
+          <FooterSection remarks={remarks} percentage={percentage} style={headerStyle === 'modern' ? 'corporate' : 'classic'} theme={theme} />
+        </div>
+      </Wrapper>
+    );
   }
 
   return null;
@@ -346,7 +493,7 @@ const FooterSection: React.FC<{ remarks: string, percentage: string, style: stri
     if (style === 'corporate') percentageBoxStyle = { backgroundColor: theme.secondaryColor, color: '#ffffff' };
 
     return (
-        <div className="mt-8">
+        <div className="mt-auto">
             <div className={`flex gap-4 mb-12 ${style === 'corporate' ? 'flex-row-reverse' : ''}`}>
                  <div className="flex-grow p-4 bg-gray-50 border rounded relative" style={{ borderColor: style === 'elegant' ? theme.secondaryColor : '#e5e7eb' }}>
                      <p className="text-xs font-bold uppercase text-gray-400 mb-2">Teacher's Remarks</p>
@@ -359,10 +506,14 @@ const FooterSection: React.FC<{ remarks: string, percentage: string, style: stri
                  </div>
             </div>
 
-            <div className="flex justify-between items-end px-8 text-center mt-12">
+            <div className="flex justify-between items-end px-8 text-center mt-12 pb-4">
                 <div>
                     <div className="h-px w-32 bg-gray-400 mb-2"></div>
                     <p className="text-[10px] uppercase font-bold text-gray-500">Class Teacher</p>
+                </div>
+                <div>
+                    <div className="h-px w-32 bg-gray-400 mb-2"></div>
+                    <p className="text-[10px] uppercase font-bold text-gray-500">Parent/Guardian</p>
                 </div>
                 <div>
                     <div className="h-px w-32 bg-gray-400 mb-2"></div>
